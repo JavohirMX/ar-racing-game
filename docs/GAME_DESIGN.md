@@ -2,7 +2,7 @@
 
 ## Overview
 
-**AR Racing Game** is a local multiplayer augmented reality racing game where players control delivery drivers on motorbikes. Races take place on 3D city-themed tracks placed on real-world flat surfaces via AR. The first player to complete all laps wins.
+**Bike Bike** is a local multiplayer augmented reality racing game where players control delivery drivers on motorbikes. Races take place on 3D city-themed tracks placed on real-world flat surfaces via AR. The first player to complete all laps wins.
 
 ### Quick Reference
 

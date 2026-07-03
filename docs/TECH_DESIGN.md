@@ -91,7 +91,7 @@ NWConnection (TCP, one per peer)
     │
 NWBrowser (peer discovery) / NWListener (host advertising)
     │
-Bonjour (service type: "_arracing._tcp")
+Bonjour (service type: "_bikebike._tcp")
 ```
 
 ### Peer Discovery
@@ -101,18 +101,18 @@ Bonjour (service type: "_arracing._tcp")
 let listener = try NWListener(using: .tcp, on: randomPort)
 listener.service = NWListener.Service(
     name: hostName,
-    type: "_arracing._tcp",
+    type: "_bikebike._tcp",
     domain: "local."
 )
 
 // Peer discovers
 let browser = NWBrowser(
-    for: .bonjour(type: "_arracing._tcp", domain: "local."),
+    for: .bonjour(type: "_bikebike._tcp", domain: "local."),
     using: .tcp
 )
 ```
 
-The service type `_arracing._tcp` must be declared in `Info.plist` under `NSBonjourServices`.
+The service type `_bikebike._tcp` must be declared in `Info.plist` under `NSBonjourServices`.
 
 ### Connection Setup
 
@@ -191,7 +191,7 @@ Race resumes with countdown (3... 2... 1... GO!)
 ### QR Code Fallback
 
 When auto-discovery fails (e.g., restrictive network):
-1. Host displays a QR code containing JSON: `{"name":"Player1","host":"192.168.1.5","port":12345,"service":"_arracing._tcp"}`
+1. Host displays a QR code containing JSON: `{"name":"Player1","host":"192.168.1.5","port":12345,"service":"_bikebike._tcp"}`
 2. Peer scans the QR, parses the endpoint
 3. Peer connects directly via `NWConnection(host:port:using:)`
 
@@ -406,9 +406,9 @@ CoreHaptics engine is created on app launch. If the device doesn't support CoreH
 ## Project Structure
 
 ```
-ARRacingGame/
+BikeBike/
 ├── App/
-│   ├── ARRacingGameApp.swift          # @main entry point
+│   ├── BikeBikeApp.swift              # @main entry point
 │   └── AppDependencyContainer.swift   # DI setup
 ├── Models/
 │   ├── GameState.swift                # Codable game state for networking
@@ -485,7 +485,7 @@ ARRacingGame/
 
 <key>NSBonjourServices</key>
 <array>
-    <string>_arracing._tcp</string>
+    <string>_bikebike._tcp</string>
 </array>
 
 <key>NSCameraUsageDescription</key>

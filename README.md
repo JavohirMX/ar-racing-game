@@ -1,4 +1,4 @@
-# AR Racing Game
+# Bike Bike
 
 A local multiplayer augmented reality racing game for iOS. Race as delivery drivers on motorbikes through city-themed tracks placed in the real world — compete with friends to see who finishes first.
 
@@ -41,7 +41,7 @@ git clone https://github.com/JavohirMX/ar-racing-game.git
 cd ar-racing-game
 
 # Open in Xcode
-open ARRacingGame.xcodeproj
+open BikeBike.xcodeproj
 
 # Build and run on a physical iOS device
 # (ARKit does not work in the simulator)
@@ -50,7 +50,7 @@ open ARRacingGame.xcodeproj
 ## Project Structure
 
 ```
-ARRacingGame/
+BikeBike/
 ├── App/            # App entry point, dependency injection
 ├── Game/           # Race state machine, game logic
 ├── Entities/       # RealityKit entities and components

@@ -75,13 +75,13 @@ All game UI uses **SF Pro Rounded** for its friendly, game-like feel. System fon
 ```
 ┌──────────────────────────┐
 │                          │
-│     🏍️  RACING GAME      │
+│     🏍️  Bike Bike       │
 │                          │
 │   [   SOLO RACE   ]     │
 │   [  MULTIPLAYER  ]     │
 │   [   SETTINGS    ]     │
 │                          │
-│    v1.0 · iOS Academy    │
+│     v1.0 · Bike Bike    │
 └──────────────────────────┘
 ```
 

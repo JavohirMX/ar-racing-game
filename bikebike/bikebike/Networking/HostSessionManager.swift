@@ -12,8 +12,11 @@ actor HostSessionManager {
     private var inputContinuation: AsyncStream<(UUID, PlayerInput)>.Continuation?
     private var inputStreamStarted = false
 
-    var onPlayerJoined: (@Sendable (UUID, String) -> Void)?
-    var onPlayerLeft: (@Sendable (UUID) -> Void)?
+    private var onPlayerJoined: (@Sendable (UUID, String) -> Void)?
+    private var onPlayerLeft: (@Sendable (UUID) -> Void)?
+
+    func setOnPlayerJoined(_ handler: @escaping @Sendable (UUID, String) -> Void) { onPlayerJoined = handler }
+    func setOnPlayerLeft(_ handler: @escaping @Sendable (UUID) -> Void) { onPlayerLeft = handler }
 
     private struct PendingContext {
         let connection: any NetworkConnectionProtocol

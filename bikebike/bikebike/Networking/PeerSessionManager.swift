@@ -47,7 +47,9 @@ actor PeerSessionManager {
     private var hostContinuation: AsyncStream<DiscoveredHost>.Continuation?
     private var connectionFactory: @Sendable (NWEndpoint) -> any NetworkConnectionProtocol
 
-    var onDisconnected: (@Sendable (Error?) -> Void)?
+    private var onDisconnected: (@Sendable (Error?) -> Void)?
+
+    func setOnDisconnected(_ handler: @escaping @Sendable (Error?) -> Void) { onDisconnected = handler }
 
     init(
         nickname: String,

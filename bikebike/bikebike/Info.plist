@@ -6,5 +6,9 @@
 	<array>
 		<string>_bikebike._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to place the racetrack in augmented reality and scan QR codes to join multiplayer games.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app uses the local network to discover and connect to nearby players for multiplayer races.</string>
 </dict>
 </plist>

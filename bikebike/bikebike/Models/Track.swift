@@ -37,17 +37,17 @@ enum ObstacleType: String, Codable {
 extension Track {
     static let downtown = Track(
         id: "downtown",
-        name: "Downtown Dash",
-        description: "Tight city streets with sharp corners",
+        name: "Oval Loop",
+        description: "Stadium oval tabletop track",
         defaultLaps: 3,
         minLaps: 1,
         maxLaps: 5,
-        modelFileName: "track_downtown.usdz",
-        startPosition: SIMD3<Float>(0.0, 0.02, 0.0),
-        startRotation: 0.0,
+        modelFileName: OvalTrackGeometry.presetId,
+        startPosition: OvalTrackGeometry.startGridOffset,
+        startRotation: OvalTrackGeometry.startRotation,
         checkpoints: [
-            Checkpoint(id: 0, position: SIMD3<Float>(0.0, 0.0, 0.0), radius: 0.05),
-            Checkpoint(id: 1, position: SIMD3<Float>(0.0, 0.0, -0.5), radius: 0.05),
+            OvalTrackGeometry.finishCheckpoint,
+            OvalTrackGeometry.halfwayCheckpoint,
         ],
         obstacles: []
     )

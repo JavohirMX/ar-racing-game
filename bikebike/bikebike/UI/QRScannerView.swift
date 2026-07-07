@@ -19,8 +19,17 @@ struct QRScannerView: View {
                 }
                 .padding(24)
 
+                if !container.multiplayerSession.discoveredHosts.isEmpty {
+                    hostListPanel
+                        .padding(.horizontal, 24)
+                }
+
                 Spacer()
                 QRViewfinder()
+                Text("Scan host QR code or pick a nearby game")
+                    .font(GameTypography.body(14))
+                    .foregroundStyle(.white)
+                    .gameTitleShadow()
                 Spacer()
             }
 
@@ -32,16 +41,58 @@ struct QRScannerView: View {
                     .background(.black.opacity(0.6))
                     .cornerRadius(12)
             }
+
+            if let error = container.multiplayerSession.joinError {
+                Text(error)
+                    .font(GameTypography.body(14))
+                    .foregroundStyle(.white)
+                    .padding()
+                    .background(.black.opacity(0.7))
+                    .cornerRadius(12)
+                    .padding()
+            }
         }
         .navigationBarHidden(true)
         .onAppear {
             container.nickname = nickname
             scanner.start()
+            container.multiplayerSession.startBrowsing()
         }
-        .onDisappear { scanner.stop() }
-        .onChange(of: scanner.scanCompleted) { _, completed in
-            guard completed else { return }
+        .onDisappear {
+            scanner.stop()
+        }
+        .onChange(of: scanner.scannedEndpoint) { _, endpoint in
+            guard let endpoint else { return }
+            container.multiplayerSession.join(endpoint: endpoint, nickname: nickname)
             container.path.append(AppRoute.hostLobby(laps: container.selectedLaps, isHost: false))
+        }
+    }
+
+    private var hostListPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Nearby Games")
+                .font(GameTypography.body(14).weight(.bold))
+                .foregroundStyle(.white)
+
+            ForEach(container.multiplayerSession.discoveredHosts) { host in
+                Button {
+                    container.multiplayerSession.join(host: host, nickname: nickname)
+                    container.path.append(AppRoute.hostLobby(laps: container.selectedLaps, isHost: false))
+                } label: {
+                    HStack {
+                        Text(host.name)
+                            .font(GameTypography.body(14))
+                        Spacer()
+                        Text("Join")
+                            .font(GameTypography.body(13).weight(.bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(.black.opacity(0.5)))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }
@@ -54,7 +105,9 @@ struct HostLobbyView: View {
     let isHost: Bool
 
     private var lobbySlots: [LobbySlotPresentation] {
-        LobbySlotPresentation.demo(hostNickname: container.nickname)
+        container.multiplayerSession.lobbyPlayers.isEmpty
+            ? LobbySlotPresentation.demo(hostNickname: container.nickname)
+            : container.multiplayerSession.lobbyPlayers
     }
 
     var body: some View {
@@ -67,10 +120,13 @@ struct HostLobbyView: View {
                                 Text("Room QR")
                                     .font(GameTypography.body(14).weight(.bold))
                                     .foregroundStyle(GameColors.darkBrown)
-                                if let qrImage = MockQRCode.image() {
+                                if let qrImage = container.multiplayerSession.qrImage {
                                     Image(uiImage: qrImage)
                                         .interpolation(.none)
                                         .resizable()
+                                        .frame(width: 140, height: 140)
+                                } else {
+                                    ProgressView()
                                         .frame(width: 140, height: 140)
                                 }
                                 Text("Scan to join the game")
@@ -112,6 +168,9 @@ struct HostLobbyView: View {
 
                     if isHost {
                         Button {
+                            Task {
+                                await container.multiplayerSession.broadcastLobby(laps: laps)
+                            }
                             container.path.append(
                                 AppRoute.gameSession(.multiplayerHost, laps: laps)
                             )
@@ -146,6 +205,15 @@ struct HostLobbyView: View {
             .padding(.top, 16)
         }
         .navigationBarHidden(true)
+        .onAppear {
+            if isHost, container.multiplayerSession.existingHostManager == nil {
+                container.multiplayerSession.startHosting(nickname: container.nickname, laps: laps)
+            }
+        }
+        .onChange(of: container.multiplayerSession.shouldNavigateToRace) { _, shouldNavigate in
+            guard !isHost, shouldNavigate else { return }
+            container.path.append(AppRoute.gameSession(.multiplayerPeer, laps: laps))
+        }
     }
 }
 

@@ -1,7 +1,18 @@
 import Foundation
+import simd
 
 @MainActor
 final class RaceEngine {
+    private enum PhysicsTuning {
+        static let acceleration: Float = 1.2
+        static let maxSpeed: Float = 0.35
+        static let boostSpeed: Float = 0.5
+        static let linearDamping: Float = 0.3
+        static let wheelbase: Float = 0.08
+        static let maxSteerAngle: Float = 0.45
+        static let minTurnSpeed: Float = 0.02
+    }
+
     let track: Track
     let totalLaps: Int
     let sessionID: UUID
@@ -10,7 +21,6 @@ final class RaceEngine {
     private var positions: [UUID: SIMD3<Float>] = [:]
     private var rotations: [UUID: Float] = [:]
     private var velocities: [UUID: SIMD3<Float>] = [:]
-    private var angularVelocities: [UUID: Float] = [:]
     private var bikeInputs: [UUID: BikeInputComponent] = [:]
     private var bikeStates: [UUID: BikeStateComponent] = [:]
     private var bikeBoosts: [UUID: BoostComponent] = [:]
@@ -24,20 +34,23 @@ final class RaceEngine {
         var finishTime: TimeInterval?
     }
 
-    init(track: Track, sessionID: UUID) {
+    init(track: Track, sessionID: UUID, totalLaps: Int? = nil) {
         self.track = track
-        self.totalLaps = track.defaultLaps
+        self.totalLaps = totalLaps ?? track.defaultLaps
         self.sessionID = sessionID
     }
 
     var playerCount: Int { playerMeta.count }
+
+    func currentPlayerStates() -> [PlayerState] {
+        buildPlayerStates()
+    }
 
     func addPlayer(playerID: UUID, nickname: String) {
         playerMeta[playerID] = PlayerMeta(nickname: nickname)
         positions[playerID] = track.startPosition
         rotations[playerID] = track.startRotation
         velocities[playerID] = .zero
-        angularVelocities[playerID] = 0
         bikeInputs[playerID] = BikeInputComponent()
         bikeStates[playerID] = BikeStateComponent(playerID: playerID, nickname: nickname)
         bikeBoosts[playerID] = BoostComponent()
@@ -48,7 +61,6 @@ final class RaceEngine {
         positions.removeValue(forKey: playerID)
         rotations.removeValue(forKey: playerID)
         velocities.removeValue(forKey: playerID)
-        angularVelocities.removeValue(forKey: playerID)
         bikeInputs.removeValue(forKey: playerID)
         bikeStates.removeValue(forKey: playerID)
         bikeBoosts.removeValue(forKey: playerID)
@@ -63,7 +75,6 @@ final class RaceEngine {
             positions[playerID] = track.startPosition
             rotations[playerID] = track.startRotation
             velocities[playerID] = .zero
-            angularVelocities[playerID] = 0
 
             bikeInputs[playerID] = BikeInputComponent()
 
@@ -127,38 +138,43 @@ final class RaceEngine {
             guard var velocity = velocities[playerID] else { continue }
             guard var position = positions[playerID] else { continue }
             guard var rotation = rotations[playerID] else { continue }
-            guard var angularVel = angularVelocities[playerID] else { continue }
 
             let boost = bikeBoosts[playerID]
             let isBoosted = boost?.isActive ?? false
+            let maxSpeed: Float = isBoosted ? PhysicsTuning.boostSpeed : PhysicsTuning.maxSpeed
+
+            var speed = simd_length(velocity)
 
             if input.isAccelerating {
-                let angle = rotation
-                let forward = SIMD3<Float>(-sin(angle), 0, -cos(angle))
-                velocity += forward * 15.0 * dt
+                speed += PhysicsTuning.acceleration * dt
             }
 
-            let maxSpeed: Float = isBoosted ? 7.5 : 5.0
-            let speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z)
-            if speed > maxSpeed {
-                velocity = (velocity / speed) * maxSpeed
+            speed *= (1.0 - PhysicsTuning.linearDamping * dt)
+            speed = min(max(speed, 0), maxSpeed)
+
+            if abs(input.steerDirection) > 0.05, speed > PhysicsTuning.minTurnSpeed {
+                let steerAngle = -input.steerDirection * PhysicsTuning.maxSteerAngle
+                let angularRate = (speed / PhysicsTuning.wheelbase) * tan(steerAngle)
+                rotation += angularRate * dt
             }
 
-            velocity *= (1.0 - 0.3 * dt)
+            let forward = SIMD3<Float>(-sin(rotation), 0, -cos(rotation))
+            velocity = forward * speed
             position += velocity * dt
 
-            if input.steerDirection != 0 {
-                let turnRate: Float = 120.0 * (.pi / 180.0)
-                angularVel = input.steerDirection * turnRate * dt
-            } else {
-                angularVel *= (1.0 - 0.95 * dt)
+            if track.modelFileName == OvalTrackGeometry.presetId {
+                let result = OvalTrackGeometry.clampToCorridor(position)
+                position.x = result.position.x
+                position.z = result.position.y
+                position.y = max(OvalTrackGeometry.surfaceY, position.y)
+                if result.hitWall {
+                    velocity *= 0.5
+                }
             }
-            rotation += angularVel
 
             velocities[playerID] = velocity
             positions[playerID] = position
             rotations[playerID] = rotation
-            angularVelocities[playerID] = angularVel
         }
     }
 

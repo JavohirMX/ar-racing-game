@@ -143,9 +143,12 @@ import Foundation
         let track = Track.downtown
 
         #expect(track.id == "downtown")
+        #expect(track.name == "Oval Loop")
+        #expect(track.modelFileName == OvalTrackGeometry.presetId)
         #expect(track.defaultLaps == 3)
         #expect(track.minLaps == 1)
         #expect(track.maxLaps == 5)
+        #expect(track.startPosition == OvalTrackGeometry.startGridOffset)
         #expect(track.checkpoints.count == 2)
         #expect(track.checkpoints[0].id == 0)
         #expect(track.checkpoints[1].id == 1)

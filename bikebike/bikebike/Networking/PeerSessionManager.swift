@@ -86,14 +86,38 @@ actor PeerSessionManager {
     }
 
     func join(host: DiscoveredHost) async throws -> JoinResult {
-        let conn = connectionFactory(host.endpoint)
+        try await connectAndJoin(using: host.endpoint)
+    }
+
+    func join(endpoint: QREndpointInfo) async throws -> JoinResult {
+        let nwEndpoint = NWEndpoint.hostPort(
+            host: NWEndpoint.Host(endpoint.host),
+            port: NWEndpoint.Port(rawValue: endpoint.port) ?? 0
+        )
+        return try await connectAndJoin(using: nwEndpoint)
+    }
+
+    private func connectAndJoin(using endpoint: NWEndpoint) async throws -> JoinResult {
+        let conn = connectionFactory(endpoint)
         connection = conn
+        let nickname = self.nickname
 
         return try await withCheckedThrowingContinuation { continuation in
             let joinBox = JoinContinuationBox(continuation)
+            var didSendJoin = false
 
             conn.onStateUpdate = { @Sendable state in
                 switch state {
+                case .ready:
+                    guard !didSendJoin else { return }
+                    didSendJoin = true
+                    if let data = try? JSONEncoder().encode(
+                        WireMessage.joinRequest(JoinRequest(nickname: nickname))
+                    ) {
+                        conn.send(data: data)
+                    } else {
+                        joinBox.resume(throwing: NetworkError.encodingFailed)
+                    }
                 case .failed(let error):
                     joinBox.resume(throwing: error)
                 case .cancelled:
@@ -108,14 +132,6 @@ actor PeerSessionManager {
             }
 
             conn.start(queue: .global())
-
-            if let data = try? JSONEncoder().encode(
-                WireMessage.joinRequest(JoinRequest(nickname: nickname))
-            ) {
-                conn.send(data: data)
-            } else {
-                joinBox.resume(throwing: NetworkError.encodingFailed)
-            }
         }
     }
 

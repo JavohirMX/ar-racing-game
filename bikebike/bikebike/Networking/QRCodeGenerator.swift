@@ -1,7 +1,7 @@
 import UIKit
 import CoreImage
 
-struct QREndpointInfo: Codable, Sendable {
+struct QREndpointInfo: Codable, Sendable, Equatable {
     let name: String
     let host: String
     let port: UInt16

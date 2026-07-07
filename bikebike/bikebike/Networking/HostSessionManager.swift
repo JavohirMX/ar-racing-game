@@ -14,9 +14,11 @@ actor HostSessionManager {
 
     private var onPlayerJoined: (@Sendable (UUID, String) -> Void)?
     private var onPlayerLeft: (@Sendable (UUID) -> Void)?
+    private var lobbyHostPlayer: (UUID, String)?
 
     func setOnPlayerJoined(_ handler: @escaping @Sendable (UUID, String) -> Void) { onPlayerJoined = handler }
     func setOnPlayerLeft(_ handler: @escaping @Sendable (UUID) -> Void) { onPlayerLeft = handler }
+    func setLobbyHostPlayer(_ player: (UUID, String)?) { lobbyHostPlayer = player }
 
     private struct PendingContext {
         let connection: any NetworkConnectionProtocol
@@ -88,8 +90,12 @@ actor HostSessionManager {
         }
     }
 
-    func broadcastToLobby(players: [(UUID, String)]) {
-        let states = players.map { (id, name) in
+    func broadcastToLobby(players: [(UUID, String)], totalLaps: Int = 0) {
+        var allPlayers = players
+        if let host = lobbyHostPlayer, !allPlayers.contains(where: { $0.0 == host.0 }) {
+            allPlayers.insert(host, at: 0)
+        }
+        let states = allPlayers.map { (id, name) in
             PlayerState(
                 playerID: id, nickname: name,
                 position: .zero, rotation: 0, speed: 0,
@@ -100,10 +106,21 @@ actor HostSessionManager {
         }
         let lobbyState = GameState(
             sessionID: sessionID, tick: 0, phase: .waiting,
-            countdownSeconds: nil, totalLaps: 0,
+            countdownSeconds: nil, totalLaps: totalLaps,
             players: states, results: nil
         )
         broadcast(lobbyState)
+    }
+
+    func endpointInfo() -> QREndpointInfo? {
+        guard let port = listener?.port?.rawValue,
+              let host = LocalNetworkAddress.wifiIPv4Address() else { return nil }
+        return QREndpointInfo(
+            name: nickname,
+            host: host,
+            port: port,
+            service: "_bikebike._tcp"
+        )
     }
 
     func inputStream() -> AsyncStream<(UUID, PlayerInput)> {

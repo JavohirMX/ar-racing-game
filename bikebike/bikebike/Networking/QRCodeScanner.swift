@@ -5,6 +5,7 @@ import Combine
 @MainActor
 final class QRCodeScanner: NSObject, ObservableObject {
     @Published var scanCompleted = false
+    @Published var scannedEndpoint: QREndpointInfo?
     @Published var permissionDenied = false
 
     let session = AVCaptureSession()
@@ -71,6 +72,7 @@ extension QRCodeScanner: AVCaptureMetadataOutputObjectsDelegate {
         Task { @MainActor in
             guard !scanCompleted else { return }
             scanCompleted = true
+            scannedEndpoint = info
             stop()
         }
     }

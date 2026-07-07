@@ -10,6 +10,9 @@ struct SurfaceScanView: View {
 
     @State private var isPlaneDetected = false
     @State private var canConfirm = false
+    @State private var isLoading = false
+    @State private var sessionError: String?
+    @State private var placementResult: TrackPlacementResult?
 
     var body: some View {
         ZStack {
@@ -17,12 +20,30 @@ struct SurfaceScanView: View {
                 track: .downtown,
                 isPlaneDetected: $isPlaneDetected,
                 canConfirm: $canConfirm,
-                onEntityReady: { _ in }
+                isLoading: $isLoading,
+                sessionError: $sessionError,
+                onEntityReady: { result in
+                    placementResult = result
+                }
             )
             .ignoresSafeArea()
 
+            if isLoading {
+                ProgressView("Loading track...")
+                    .tint(.white)
+                    .foregroundStyle(.white)
+            }
+
             VStack {
-                if !isPlaneDetected {
+                if let sessionError {
+                    Text(sessionError)
+                        .font(GameTypography.body(14))
+                        .foregroundStyle(.white)
+                        .padding()
+                        .background(.black.opacity(0.7))
+                        .cornerRadius(12)
+                        .padding(.top, 80)
+                } else if !isPlaneDetected {
                     Text("Move your device slowly over a flat surface")
                         .font(GameTypography.body())
                         .foregroundStyle(.white)
@@ -34,7 +55,7 @@ struct SurfaceScanView: View {
 
                 Spacer()
 
-                if canConfirm {
+                if canConfirm, !isLoading, placementResult != nil {
                     OrangeCTAButton(title: "CONFIRM PLACE") {
                         confirmAndContinue()
                     }
@@ -56,6 +77,9 @@ struct SurfaceScanView: View {
     }
 
     private func confirmAndContinue() {
+        guard let placementResult else { return }
+        container.applyTrackPlacement(placementResult)
+
         switch mode {
         case .solo:
             container.path.append(AppRoute.gameSession(.solo, laps: laps))
@@ -103,6 +127,18 @@ struct FoodDeliveredView: View {
     let mode: GameFlowMode
     let laps: Int
 
+    private var rows: [FoodDeliveredRow] {
+        container.lastRaceResults.map { result in
+            FoodDeliveredRow(
+                id: result.position,
+                rank: result.position,
+                nickname: result.nickname,
+                stars: result.stars,
+                time: result.totalTime ?? 0
+            )
+        }
+    }
+
     var body: some View {
         ZStack {
             ScenicBackground()
@@ -131,14 +167,14 @@ struct FoodDeliveredView: View {
                     )
 
                     VStack(spacing: 0) {
-                        ForEach(Array(FoodDeliveredRow.sampleRows.enumerated()), id: \.element.id) { index, row in
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                             LeaderboardRow(
                                 rank: row.rank,
                                 nickname: row.nickname,
                                 stars: row.stars,
                                 time: row.time
                             )
-                            if index < FoodDeliveredRow.sampleRows.count - 1 {
+                            if index < rows.count - 1 {
                                 Divider()
                             }
                         }

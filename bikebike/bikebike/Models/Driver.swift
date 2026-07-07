@@ -30,5 +30,5 @@ enum Driver: Int, CaseIterable, Codable {
         }
     }
 
-    var modelFileName: String { "bike.usdz" }
+    var modelFileName: String { "bike-talin.usdz" }
 }

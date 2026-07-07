@@ -1,14 +1,9 @@
 import SwiftUI
 import RealityKit
 
-private enum VisualRacePhase {
-    case countdown
-    case racing
-    case finished
-}
-
 struct GameSessionContainerView: View {
     @EnvironmentObject private var container: AppDependencyContainer
+    @StateObject private var viewModel: GameSessionViewModel
 
     let mode: GameFlowMode
     let laps: Int
@@ -18,26 +13,50 @@ struct GameSessionContainerView: View {
     @State private var isBraking = false
     @State private var boostTapped = false
     @State private var showSettings = false
-
-    @State private var phase: VisualRacePhase = .countdown
-    @State private var countdownSeconds: Int? = 3
+    @State private var isARLoading = true
     @State private var didNavigateToResults = false
+
+    init(mode: GameFlowMode, laps: Int) {
+        self.mode = mode
+        self.laps = laps
+        let container = AppDependencyContainer.shared
+        let gameMode: GameMode = switch mode {
+        case .solo: .solo
+        case .multiplayerHost: .multiplayerHost
+        case .multiplayerPeer: .multiplayerPeer
+        }
+        _viewModel = StateObject(wrappedValue: GameSessionViewModel(
+            mode: gameMode,
+            track: container.sessionTrack,
+            laps: laps,
+            nickname: container.nickname,
+            sessionID: container.multiplayerSession.sessionID,
+            hostManager: gameMode == .multiplayerHost ? container.multiplayerSession.existingHostManager : nil,
+            peerManager: gameMode == .multiplayerPeer ? container.multiplayerSession.existingPeerManager : nil
+        ))
+    }
 
     var body: some View {
         ZStack {
-            ARPlacementContainer(
-                track: .downtown,
-                isPlaneDetected: .constant(true),
-                canConfirm: .constant(true),
-                onEntityReady: { _ in }
+            ARRaceSceneContainer(
+                track: container.sessionTrack,
+                players: viewModel.players,
+                placementWorldTransform: container.placementWorldTransform,
+                isLoading: $isARLoading
             )
             .ignoresSafeArea()
 
-            if phase == .countdown {
-                VisualCountdownOverlay(countdownSeconds: countdownSeconds)
+            if isARLoading {
+                ProgressView("Loading track...")
+                    .tint(.white)
+                    .foregroundStyle(.white)
             }
 
-            if phase == .racing {
+            if viewModel.phase == .countdown {
+                VisualCountdownOverlay(countdownSeconds: viewModel.countdownSeconds)
+            }
+
+            if viewModel.phase == .racing {
                 HUDView(
                     steer: $steer,
                     isAccelerating: $isAccelerating,
@@ -52,46 +71,39 @@ struct GameSessionContainerView: View {
             SettingsView()
                 .environmentObject(container)
         }
-        .onAppear { startVisualCountdown() }
+        .onAppear {
+            viewModel.setup()
+            if mode == .solo || mode == .multiplayerHost {
+                viewModel.startRace()
+            }
+        }
+        .onDisappear {
+            viewModel.cleanup()
+        }
+        .onChange(of: steer) { _, _ in sendInput() }
+        .onChange(of: isAccelerating) { _, _ in sendInput() }
+        .onChange(of: isBraking) { _, _ in sendInput() }
         .onChange(of: boostTapped) { _, tapped in
             if tapped {
                 HapticManager.shared.boost()
                 AudioManager.shared.playBoost()
+                sendInput(boost: true)
                 boostTapped = false
             }
         }
-    }
-
-    private func startVisualCountdown() {
-        countdownSeconds = 3
-        HapticManager.shared.countdownTick()
-        AudioManager.shared.playCountdownTick()
-
-        Task { @MainActor in
-            for second in stride(from: 3, through: 1, by: -1) {
-                countdownSeconds = second
-                try? await Task.sleep(for: .seconds(1))
-                if second > 1 {
-                    HapticManager.shared.countdownTick()
-                    AudioManager.shared.playCountdownTick()
-                }
-            }
-
-            countdownSeconds = 0
-            HapticManager.shared.raceStart()
-            AudioManager.shared.playGoHorn()
-            try? await Task.sleep(for: .milliseconds(500))
-
-            countdownSeconds = nil
-            phase = .racing
-
-            try? await Task.sleep(for: .seconds(5))
-            guard !didNavigateToResults else { return }
+        .onChange(of: viewModel.phase) { _, phase in
+            guard phase == .results, !didNavigateToResults else { return }
             didNavigateToResults = true
-            phase = .finished
             AudioManager.shared.playFinish()
+            let results = viewModel.results ?? []
+            container.lastRaceResults = results
             container.path.append(AppRoute.foodDelivered(mode, laps: laps))
         }
+    }
+
+    private func sendInput(boost: Bool = false) {
+        let accelerate = isAccelerating && !isBraking
+        viewModel.updateInput(steer: steer, accelerate: accelerate, boost: boost)
     }
 }
 

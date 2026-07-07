@@ -11,11 +11,15 @@ enum GameMode {
 final class GameSessionViewModel: ObservableObject {
     @Published var phase: GamePhase = .waiting
     @Published var countdownSeconds: Int?
+    @Published var players: [PlayerState] = []
+    @Published var results: [RaceResult]?
     @Published var playerCount: Int = 0
 
     let mode: GameMode
     let track: Track
+    let laps: Int
     let sessionID: UUID
+    let nickname: String
 
     private let raceEngine: RaceEngine
     private var hostManager: HostSessionManager?
@@ -23,12 +27,27 @@ final class GameSessionViewModel: ObservableObject {
     private var localPlayerID: UUID?
     private var tickTimer: Timer?
     private var stateTask: Task<Void, Never>?
+    private var inputTask: Task<Void, Never>?
 
-    init(mode: GameMode, track: Track) {
+    init(
+        mode: GameMode,
+        track: Track,
+        laps: Int,
+        nickname: String,
+        sessionID: UUID,
+        hostManager: HostSessionManager? = nil,
+        peerManager: PeerSessionManager? = nil,
+        localPlayerID: UUID? = nil
+    ) {
         self.mode = mode
         self.track = track
-        self.sessionID = UUID()
-        self.raceEngine = RaceEngine(track: track, sessionID: sessionID)
+        self.laps = laps
+        self.nickname = nickname
+        self.sessionID = sessionID
+        self.hostManager = hostManager
+        self.peerManager = peerManager
+        self.localPlayerID = localPlayerID
+        self.raceEngine = RaceEngine(track: track, sessionID: sessionID, totalLaps: laps)
     }
 
     func setup() {
@@ -51,9 +70,14 @@ final class GameSessionViewModel: ObservableObject {
     func cleanup() {
         tickTimer?.invalidate()
         stateTask?.cancel()
+        inputTask?.cancel()
         Task {
-            await hostManager?.stop()
-            await peerManager?.disconnect()
+            if mode != .multiplayerHost {
+                await hostManager?.stop()
+            }
+            if mode != .multiplayerPeer {
+                await peerManager?.disconnect()
+            }
         }
     }
 
@@ -67,9 +91,7 @@ final class GameSessionViewModel: ObservableObject {
         )
 
         switch mode {
-        case .solo:
-            raceEngine.applyInput(playerID: localID, input: input)
-        case .multiplayerHost:
+        case .solo, .multiplayerHost:
             raceEngine.applyInput(playerID: localID, input: input)
         case .multiplayerPeer:
             Task { await peerManager?.sendInput(input) }
@@ -77,123 +99,129 @@ final class GameSessionViewModel: ObservableObject {
     }
 
     private func addLocalPlayer() {
-        let playerID = UUID()
+        let playerID = localPlayerID ?? UUID()
         localPlayerID = playerID
-        raceEngine.addPlayer(playerID: playerID, nickname: "Player")
+        raceEngine.addPlayer(playerID: playerID, nickname: nickname)
         playerCount = raceEngine.playerCount
+        players = raceEngine.currentPlayerStates()
     }
 
     private func setupAsHost() {
-        let host = HostSessionManager(nickname: "Host", maxPlayers: 6, sessionID: sessionID)
-        hostManager = host
+        guard let host = hostManager else { return }
 
         Task {
-            await host.setOnPlayerJoined { [weak self] playerID, nickname in
-                guard let self else { return }
-                Task { @MainActor in
-                    self.raceEngine.addPlayer(playerID: playerID, nickname: nickname)
+            await host.setOnPlayerJoined { [weak self] playerID, name in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.raceEngine.addPlayer(playerID: playerID, nickname: name)
                     self.playerCount = self.raceEngine.playerCount
+                    self.players = self.raceEngine.currentPlayerStates()
                 }
             }
 
             await host.setOnPlayerLeft { [weak self] playerID in
-                guard let self else { return }
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
                     self.raceEngine.removePlayer(playerID: playerID)
                     self.playerCount = self.raceEngine.playerCount
+                    self.players = self.raceEngine.currentPlayerStates()
                 }
             }
-
-            try? await host.start()
-            await processHostInputs()
         }
-    }
 
-    private func processHostInputs() async {
-        guard let host = hostManager else { return }
-        for await (playerID, input) in await host.inputStream() {
-            await MainActor.run { [weak self] in
-                self?.raceEngine.applyInput(playerID: playerID, input: input)
+        inputTask = Task {
+            for await (playerID, input) in await host.inputStream() {
+                await MainActor.run { [weak self] in
+                    self?.raceEngine.applyInput(playerID: playerID, input: input)
+                }
             }
         }
     }
 
     private func setupAsPeer() {
-        let peer = PeerSessionManager(nickname: "Player")
-        peerManager = peer
+        guard let peer = peerManager else { return }
 
-        Task {
-            await peer.setOnDisconnected { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.phase = .finished
-                }
-            }
-
-            for await host in await peer.startBrowsing() {
-                do {
-                    let result = try await peer.join(host: host)
-                    if result.accepted, let playerID = result.playerID {
-                        self.localPlayerID = playerID
-                        self.phase = .waiting
-                        await processPeerState(peer)
-                        break
-                    }
-                } catch {
-                    // Retry next discovered host
+        stateTask = Task {
+            for await state in await peer.stateStream() {
+                await MainActor.run { [weak self] in
+                    self?.applyRemoteState(state)
                 }
             }
         }
     }
 
-    private func processPeerState(_ peer: PeerSessionManager) async {
-        for await state in await peer.stateStream() {
-            await MainActor.run { [weak self] in
-                self?.update(from: state)
-            }
-        }
-    }
-
-    private func update(from state: GameState) {
+    private func applyRemoteState(_ state: GameState) {
         phase = state.phase
+        players = state.players
         playerCount = state.players.count
+        countdownSeconds = state.countdownSeconds
+        results = state.results
 
-        if state.phase == .countdown {
-            countdownSeconds = state.countdownSeconds
-        }
         if state.phase == .finished || state.phase == .results {
             tickTimer?.invalidate()
+            phase = .results
         }
     }
 
     private func beginCountdown() {
         phase = .countdown
         countdownSeconds = 3
+        broadcastPhase()
 
         Task { @MainActor in
-            for _ in 1...3 {
+            for second in stride(from: 3, through: 1, by: -1) {
+                countdownSeconds = second
+                broadcastPhase()
+                HapticManager.shared.countdownTick()
+                AudioManager.shared.playCountdownTick()
                 try? await Task.sleep(for: .seconds(1))
-                countdownSeconds? -= 1
             }
 
-            phase = .racing
+            countdownSeconds = 0
+            broadcastPhase()
+            HapticManager.shared.raceStart()
+            AudioManager.shared.playGoHorn()
+            try? await Task.sleep(for: .milliseconds(500))
+
             countdownSeconds = nil
+            phase = .racing
             raceEngine.startRace()
+            players = raceEngine.currentPlayerStates()
+            broadcastPhase()
             startTickLoop()
         }
     }
 
+    private func broadcastPhase() {
+        guard mode == .multiplayerHost, let host = hostManager else { return }
+        let state = GameState(
+            sessionID: sessionID,
+            tick: 0,
+            phase: phase,
+            countdownSeconds: countdownSeconds,
+            totalLaps: laps,
+            players: raceEngine.currentPlayerStates(),
+            results: nil
+        )
+        Task { await host.broadcast(state) }
+    }
+
     private func startTickLoop() {
-        tickTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
+        tickTimer?.invalidate()
+        tickTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let (state, raceFinished) = self.raceEngine.tick()
-
-                if raceFinished {
-                    self.tickTimer?.invalidate()
-                }
+                self.players = state.players
 
                 if self.mode == .multiplayerHost {
                     Task { await self.hostManager?.broadcast(state) }
+                }
+
+                if raceFinished {
+                    self.tickTimer?.invalidate()
+                    self.phase = .results
+                    self.results = state.results
                 }
             }
         }

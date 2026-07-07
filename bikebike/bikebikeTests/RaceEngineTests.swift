@@ -106,6 +106,6 @@ import Foundation
 
         let (final, _) = engine.tick()
         let speed = final.players.first?.speed ?? 0
-        #expect(speed <= 5.05)
+        #expect(speed <= 0.40)
     }
 }

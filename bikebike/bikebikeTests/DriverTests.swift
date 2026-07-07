@@ -27,6 +27,6 @@ import Foundation
     @Test func allDriversShareModelFileName() {
         let fileNames = Set(Driver.allCases.map { $0.modelFileName })
         #expect(fileNames.count == 1)
-        #expect(fileNames.first == "bike.usdz")
+        #expect(fileNames.first == "bike-talin.usdz")
     }
 }
